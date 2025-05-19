@@ -24,23 +24,22 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 public class MyVpnService extends VpnService {
-    public MyVpnService() {
-    }
-
-    private static final String TAG="MyVpnService";
+    private static final String TAG = "MyVpnService";
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private ParcelFileDescriptor VpnInterface;
     private String ServerIp;
     private int ServerPortNumber;
     private Handler handler = new Handler(Looper.getMainLooper());
 
-    public static final String ACTION_VPN_CONNECTED = "com.fis.ep.vpn999.services";
+    public static final String ACTION_VPN_CONNECTED = "com.fis.ep.vpn999.services.VPN_CONNECTED";
+    public static final String ACTION_VPN_DISCONNECTED = "com.fis.ep.vpn999.services.VPN_DISCONNECTED";
     public static MyVpnService instance;
 
     @Override
     public void onCreate() {
         super.onCreate();
-        instance=this;
+        instance = this;
+        Log.d(TAG, "MyVpnService created");
     }
 
     public ParcelFileDescriptor getVpnInterface() {
@@ -49,129 +48,158 @@ public class MyVpnService extends VpnService {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "onStartCommand received");
         if (intent != null) {
-            //get the server Ip address and port number from the intent
             ServerIp = intent.getStringExtra("vpnIp");
-            ServerPortNumber = intent.getStringExtra("vpnPort", 0);
-            Thread VpnThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    MyVpnService.this.runVpnConnection();
-                }
-            });
-            VpnThread.start();
+            ServerPortNumber = intent.getIntExtra("vpnPort", 0);
+            Log.d(TAG, "Server IP: " + ServerIp + ", Port: " + ServerPortNumber);
+
+            if (!isRunning.get()) {
+                Thread VpnThread = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        MyVpnService.this.runVpnConnection();
+                    }
+                });
+                VpnThread.start();
+            } else {
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Toast.makeText(MyVpnService.this, "Connection Already Established", Toast.LENGTH_SHORT).show();
+                    }
+                });
+            }
         }
         return START_STICKY;
     }
 
     private void runVpnConnection() {
+        Log.d(TAG, "runVpnConnection started");
         try {
-            // Estalish the vpn connection
-            if (establishedVpnConnection()) {
+            if (establishVpnConnection()) {
+                Log.d(TAG, "VPN connection established successfully");
+                onVpnConnectionSuccess();
                 readFromVpnInterface();
+            } else {
+                Log.e(TAG, "Failed to establish VPN connection");
+                onVpnConnectionFailure("Failed to establish VPN connection");
             }
-        }
-        catch (Exception e) {
-            Log.e(TAG, "Error during Vpn connection: "+ e.getMessage());
+        } catch (Exception e) {
+            Log.e(TAG, "Error during Vpn connection: " + e.getMessage());
+            onVpnConnectionFailure("Error during VPN connection: " + e.getMessage());
         } finally {
             StopVpnConnection();
         }
     }
 
-    private void StopVpnConnection() {
-
-    }
-
-    private boolean establishedVpnConnection() throws IOException {
-        if (VpnInterface != null) {
+    private boolean establishVpnConnection() throws IOException {
+        if (VpnInterface == null) {
+            Log.d(TAG, "Establishing new VPN connection");
             Builder builder = new Builder();
-            builder.addAddress(ServerIp, 32); //32 is the prefix leangth for single ip address
+            if (ServerIp != null && !ServerIp.isEmpty()) {
+                builder.addAddress(ServerIp, 32);
+            } else {
+                Log.e(TAG, "Server IP is null or empty, cannot add address.");
+                return false;
+            }
             builder.addRoute("0.0.0.0", 0);
 
-            VpnInterface = builder.setSession(getString(R.string.app_name)).setConfigureIntent(null).establish();
+            VpnInterface = builder.setSession(getString(R.string.app_name))
+                    .setConfigureIntent(null)
+                    .establish();
 
             return VpnInterface != null;
+        } else {
+            Log.d(TAG, "VPN connection already established, skipping establishment.");
+            return true;
         }
-        else {
-            handler.post(new Runnable() {
-                @Override
-                public void run() {
-                    onVpnConnectionSuccess();
-                    Toast.makeText(MyVpnService.this, "Connection Already Established", Toast.LENGTH_SHORT).show();
-                }
-            });
-        }
-        return  true;
     }
 
-    //now read from the vpn interface and write to the network
-    private  void readFromVpnInterface() throws IOException{
+    private void readFromVpnInterface() throws IOException {
         isRunning.set(true);
         ByteBuffer buffer = ByteBuffer.allocate(32767);
-        while (isRunning.get()) {
-            try {
-                FileInputStream inputStream = new FileInputStream(VpnInterface.getFileDescriptor());
-                int length = inputStream.read(buffer.array());
-                if (length>0) {
-                    String receivedData = new String(buffer.array(), 0, length);
-                    //send the received data to the main activity using local braod cast receiver
-                    Intent intent = new Intent("received_data_from vpn");
-                    intent.putExtra("data", receivedData);
-                    LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        FileInputStream inputStream = null;
 
-                    //write the processed data to the network
-                    writeToNetwork(buffer, length);
+        try {
+            inputStream = new FileInputStream(VpnInterface.getFileDescriptor());
+            Log.d(TAG, "Reading from VPN interface");
+            while (isRunning.get()) {
+                buffer.clear();
+                int length = inputStream.read(buffer.array());
+
+                if (length > 0) {
+                } else if (length == -1) {
+                    Log.d(TAG, "End of stream on VPN interface, stopping connection.");
+                    break;
                 }
-            } catch (Exception e) {
-                Log.e(TAG, "error reading data from vpn interface" + e.getMessage());
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error reading data from VPN interface: " + e.getMessage());
+            onVpnConnectionFailure("Error reading data from VPN interface");
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (IOException e) {
+                    Log.e(TAG, "Error closing VPN input stream: " + e.getMessage());
+                }
             }
         }
     }
 
     private void writeToNetwork(ByteBuffer buffer, int length) {
-        String processdata = new String(buffer.array(), 0, length);
-        try {
-            Socket socket = new Socket(ServerIp, ServerPortNumber);
-            OutputStream outputStream = socket.getOutputStream();
-
-            //convert the process data into bytes and write to the server
-            byte[] databytes = processdata.getBytes(StandardCharsets.UTF_8);
-            outputStream.write(databytes);
-
-            outputStream.close();
-            socket.close();
-        } catch (Exception e) {
-            Log.e(TAG, "error seding data to the server" + e.getMessage());
-        }
+        Log.w(TAG, "writeToNetwork called - this method needs proper VPN implementation.");
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
-
+        Log.d(TAG, "MyVpnService destroyed");
         stopVpnConnection();
+    }
 
+    private void StopVpnConnection() {
+        stopVpnConnection();
     }
 
     private void stopVpnConnection() {
+        Log.d(TAG, "Stopping VPN connection");
         isRunning.set(false);
-        if(VpnInterface != null) {
+        if (VpnInterface != null) {
             try {
                 VpnInterface.close();
-            } catch (Exception e) {
-                Log.e(TAG, "Error Closing Vpn Interface" + e.getMessage());
+                VpnInterface = null;
+                Log.d(TAG, "VPN Interface closed.");
+            } catch (IOException e) {
+                Log.e(TAG, "Error Closing Vpn Interface: " + e.getMessage());
             }
         }
+        onVpnConnectionDisconnected();
     }
 
     private void onVpnConnectionSuccess() {
-        // send a local broadcast to the main activity to notify user msg
+        Log.d(TAG, "VPN Connection Success - sending broadcast");
         Intent intent = new Intent(ACTION_VPN_CONNECTED);
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)    ;j
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
     }
+
+    private void onVpnConnectionFailure(String errorMessage) {
+        Log.e(TAG, "VPN Connection Failure - sending broadcast: " + errorMessage);
+        Intent intent = new Intent(ACTION_VPN_DISCONNECTED);
+        intent.putExtra("error", errorMessage);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+        stopVpnConnection();
+    }
+
+    private void onVpnConnectionDisconnected() {
+        Log.d(TAG, "VPN Connection Disconnected - sending broadcast");
+        Intent intent = new Intent(ACTION_VPN_DISCONNECTED);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+    }
+
     @Override
     public IBinder onBind(Intent intent) {
-        // TODO: Return the communication channel to the service.
         throw new UnsupportedOperationException("Not yet implemented");
     }
 }
