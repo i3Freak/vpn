@@ -10,8 +10,8 @@ android {
 
     defaultConfig {
         applicationId = "com.fis.ep.vpn999"
-        minSdk = 24
-        targetSdk = 35
+        minSdk = 26
+        targetSdk = 33
         versionCode = 1
         versionName = "1.0"
 
@@ -20,7 +20,7 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -28,8 +28,8 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
     buildFeatures {
     }
@@ -37,6 +37,8 @@ android {
 
 dependencies {
     val appcompat_version = "1.7.0"
+    implementation("com.wireguard.android:tunnel:1.0.20230706")
+    implementation("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("com.google.android.material:material:1.9.0")
     implementation("com.airbnb.android:lottie:5.2.0")
