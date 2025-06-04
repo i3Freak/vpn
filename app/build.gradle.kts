@@ -28,8 +28,9 @@ android {
         }
     }
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
+        sourceCompatibility = JavaVersion.VERSION_1_8
+        targetCompatibility = JavaVersion.VERSION_1_8
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
     }
@@ -37,8 +38,10 @@ android {
 
 dependencies {
     val appcompat_version = "1.7.0"
-    implementation("com.wireguard.android:tunnel:1.0.20230706")
-    implementation("com.android.tools:desugar_jdk_libs:2.1.5")
+    implementation ("androidx.window:window:1.0.0-rc01")
+    implementation ("androidx.window:window-java:1.0.0-rc01")
+    implementation("com.wireguard.android:tunnel:1.0.20210211")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation("com.github.bumptech.glide:glide:4.16.0")
     implementation("com.google.android.material:material:1.9.0")
     implementation("com.airbnb.android:lottie:5.2.0")
